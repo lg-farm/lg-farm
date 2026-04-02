@@ -1,0 +1,36 @@
+body {
+	.o-main-components-container {
+		.modal-dialog:has(.sh_pricelist_main_table) {
+			.modal-content{
+				.modal-title{
+					text-align: center;
+				}
+				.modal-body{
+					padding: 0 0 16px 0;
+					.popup{
+						.sh_pricelist_main_table{
+							padding: 0 0 16px 0;
+							.pricelist_table{
+								width: 100%;
+								.pricelist_row{
+									td{
+										text-align: center;
+										padding: 10px 0;
+									}
+									.price_td{
+										text-align: start;
+									}
+								}
+								.only_read{
+									:nth-child(2){
+										text-align: start;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

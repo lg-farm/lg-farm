@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_pos_config_form_jiot" model="ir.ui.view">
+        <field name="name">pos.config.form.jiot</field>
+        <field name="model">pos.config</field>
+        <field name="inherit_id" ref="point_of_sale.pos_config_view_form"/>
+        <field name="arch" type="xml">
+            <!-- Add jIoT Box as separate setting after IoT Box -->
+            <xpath expr="//div[hasclass('pos_iot_config')]/parent::setting" position="after">
+                <setting string="jIoT Box" help="Connect devices using a jIoT Box">
+                    <field name="is_jposbox"/>
+                    <div class="content-group pos_iot_config ms-3" invisible="not is_jposbox">
+                        <div class="row">
+                            <div class="col-lg-4 o_light_label">
+                                <label string="jIoT Box IP Address" for="proxy_ip"/>
+                            </div>
+                            <div class="col-lg-8">
+                                <field name="proxy_ip"/>
+                            </div>
+                        </div>
+                        <div class="row iot_barcode_scanner">
+                            <div class="col-lg-5 o_light_label">
+                                <label string="Scanner" for="iface_scan_via_proxy"/>
+                            </div>
+                            <div class="col-lg-7">
+                                <field name="iface_scan_via_proxy" readonly="0"/>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-lg-5 o_light_label">
+                                <label string="Electronic Scale" for="iface_electronic_scale"/>
+                            </div>
+                            <div class="col-lg-7">
+                                <field name="iface_electronic_scale" readonly="0"/>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-lg-5 o_light_label">
+                                <label string="Receipt Printer" for="iface_print_via_proxy"/>
+                            </div>
+                            <div class="col-lg-7">
+                                <field name="iface_print_via_proxy" readonly="0"/>
+                            </div>
+                        </div>
+                        <div class="row" invisible="not iface_print_via_proxy">
+                            <div class="col-lg-5 o_light_label ps-4">
+                                <label string="Cashdrawer" for="iface_cashdrawer"/>
+                            </div>
+                            <div class="col-lg-7">
+                                <field name="iface_cashdrawer" readonly="0"/>
+                            </div>
+                        </div>
+                    </div>
+                </setting>
+            </xpath>
+            
+            <!-- Make IoT Box and jIoT Box mutually exclusive -->
+            <field name="is_posbox" position="attributes">
+                <attribute name="readonly">is_jposbox</attribute>
+            </field>
+        </field>
+    </record>
+</odoo>

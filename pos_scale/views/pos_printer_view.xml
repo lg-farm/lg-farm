@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_pos_printer_form_jiot" model="ir.ui.view">
+        <field name="name">pos.printer.form.jiot</field>
+        <field name="model">pos.printer</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_printer_form"/>
+        <field name="arch" type="xml">
+            <!-- Update proxy_ip visibility to include jiot printer type -->
+            <xpath expr="//field[@name='proxy_ip']" position="attributes">
+                <attribute name="invisible">printer_type not in ('iot', 'jiot')</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

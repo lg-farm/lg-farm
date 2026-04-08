@@ -1,15 +1,15 @@
 import { Orderline } from "@point_of_sale/app/components/orderline/orderline";
 import { patch } from "@web/core/utils/patch";
 
-patch(Orderline, {
-    props: {
-        ...Orderline.props,
-        line: {
-            ...Orderline.props.line,
-            shape: {
-                ...Orderline.props.line.shape,
-                productId: {type: Number,optional: true,},
-            },
-        },
-    },
-});
+// patch(Orderline, {
+//     props: {
+//         ...Orderline.props,
+//         line: {
+//             ...Orderline.props.line,
+//             shape: {
+//                 ...Orderline.props.line.shape,
+//                 productId: {type: Number,optional: true,},
+//             },
+//         },
+//     },
+// });

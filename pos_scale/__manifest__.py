@@ -16,7 +16,7 @@
             * No IoT Box Required: Connect electronic scales directly to Odoo POS via jIotBox.
             * Real-Time Weight Reading: Automatically capture product weights for accurate pricing.
             * Wide Compatibility: Works with most electronic scales that support standard communication protocols.
-            * Easy Configuration: Simple setup through POS configuration settings.
+            * Easy Configuration: Simple setup through POS configuration settings
 
             This module is ideal for retail businesses dealing with weight-based products such as groceries, produce, meat, and bulk items.
     """,

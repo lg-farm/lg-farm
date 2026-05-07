@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="pos_cheque_information_template" inherit_id="point_of_sale.template" xml:space="preserve">
+	<t t-name="PaymentScreenPaymentLines" t-inherit="point_of_sale.PaymentScreenPaymentLines" t-inherit-mode="extension" owl="1">
+        <xpath expr="//div[hasclass('payment-amount')]" position="before">
+            <t t-if="pos.config.cheque_information">
+        		<t t-if="line.payment_method_id.cheque_information">
+					<div class="bank-button" style="margin: auto;" aria-label="Bank" title="Bank"
+						 t-on-click="() => this.chequeBank(line)">
+						<i class="fa fa-bank" style="font-size: 18px;"/>
+					</div>
+        		</t>
+        	</t>
+        </xpath>
+
+		<xpath expr='//t[@t-else=""]/div[hasclass("paymentline")]//div[hasclass("payment-amount")]' position="before">
+			<t t-if="pos.config.cheque_information">
+				<t t-if="line.payment_method_id.cheque_information">
+					<div class="bank-button" style="margin: auto;" aria-label="Bank" title="Bank"
+						 t-on-click="() => this.chequeBank(line)">
+						<i class="fa fa-bank" style="font-size: 18px;"/>
+					</div>
+        		</t>
+        	</t>
+		</xpath>
+	</t>
+</templates>

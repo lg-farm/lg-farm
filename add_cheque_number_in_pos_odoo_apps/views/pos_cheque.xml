@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<odoo>
+    <data>
+
+        <record id="pos_payment_method_view_form" model="ir.ui.view">
+            <field name="name">pos.payment.method.view.form</field>
+            <field name="model">pos.payment.method</field>
+            <field name="inherit_id" ref="point_of_sale.pos_payment_method_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='company_id']" position="before">
+                    <field name='cheque_information'/>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="sp_pos_order_inherit_form" model="ir.ui.view">
+            <field name="name">sp.pos.order.inherit.form</field>
+            <field name="model">pos.order</field>
+            <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//notebook/page[2]/field[@name='payment_ids']/list/field[@name='amount']" position="after">
+                    <field name='cheque_bank_id' />
+                    <field name='cheque_owner_name' />
+                    <field name='cheque_bank_acc_no' />
+                    <field name='cheque_number' />
+                </xpath>
+            </field>
+        </record>
+
+    </data>
+</odoo>

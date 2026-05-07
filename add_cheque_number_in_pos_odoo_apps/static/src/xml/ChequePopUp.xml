@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    <t t-name="add_cheque_number_in_pos_odoo_apps.ChequeInfoPopup">
+		<Dialog title="props.title" size="'md'">
+            <t t-set-slot="header">
+                <div class="d-flex flex-grow-1 justify-content-between">
+                    <h4 class="align-middle my-1">Cheque Information</h4>
+                </div>
+            </t>
+			<div class='div-container'>
+					<table class='cheque-bank-list'>
+						<thead>
+							<tr>
+								<th style="width: 45%; "/>
+								<th style="width: 45%;"/>
+								<th style="width: 10%;"/>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Bank Name</td>
+								<td style="padding: 3px;">
+									<select class="select_bank_id" name='select_bank'
+											t-ref="input-set_cheque_bank_id"
+											style="height: 40px;width: 100%;">
+										<option disabled="1" selected="1" value="">
+											Choose..
+										</option>
+										<t t-foreach="props.list" t-as="bank" t-key="bank.id" >
+											<option t-att-value='bank.id'
+													t-att-class="{selected: bank.isSelected}">
+												<t t-esc='bank.name' class="entered_info"/>
+											</option>
+										</t>
+									</select>
+								</td>
+							</tr>
+							<tr class="check_number">
+								<td>Check Number</td>
+								<td class="entered_item_qty" style="padding: 3px;">
+									<input id ="entered_check_number" type="text"
+										   t-ref="input-set_cheque_number"
+										   class="input-field" name="code"/>
+								</td>
+							</tr>
+							<tr class="owner_name">
+								<td>Owner Name</td>
+								<td class="" style="padding: 3px;">
+									<input id ="entered_owner_name" type="text" class="input-field"
+										   t-ref="input-set_cheque_owner_name" name="code"/>
+								</td>
+							</tr>
+							<tr class="bank_account">
+								<td>Bank Account</td>
+								<td class="entered_item_qty" style="padding: 3px;">
+									<input id ="entered_back_account" type="text"
+										   t-ref="input-set_cheque_bank_acc_no"
+										   class="input-field" name="code"/>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+			</div>
+
+			<t t-set-slot="footer">
+                <button class="button confirm btn btn-lg btn-primary" id="apply_order" t-on-click="getValue">
+                    Confirm
+                </button>
+                <button class="button cancel btn btn-lg btn-secondary" t-on-click="props.close">
+                    Cancel
+                </button>
+            </t>
+	</Dialog>
+</t>
+</templates>

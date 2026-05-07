@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════
+         BIN CARD Item Wise Wizard Form View
+    ══════════════════════════════════════════ -->
+    <record id="view_bin_card_item_wise_wizard_form" model="ir.ui.view">
+        <field name="name">bin.card.item.wise.wizard.form</field>
+        <field name="model">bin.card.item.wise.wizard</field>
+        <field name="arch" type="xml">
+            <form string="BIN Card - Item Wise Report">
+                <group string="Filter Options">
+                    <group>
+                        <field name="date_from" />
+                        <field name="date_to" />
+                    </group>
+                    <group>
+                        <field name="warehouse_id" />
+                        <field name="location_id" />
+                    </group>
+                </group>
+                <group string="Product Filter">
+                    <field
+                        name="product_ids"
+                        widget="many2many_tags"
+                        placeholder="Leave empty to include all products..."
+                    />
+                </group>
+                <footer>
+                    <button
+                        name="action_print_report"
+                        string="Generate Excel Report"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button string="Cancel" class="btn-secondary" special="cancel" />
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════
+         BIN CARD Item Wise Action
+    ══════════════════════════════════════════ -->
+    <record id="action_bin_card_item_wise_wizard" model="ir.actions.act_window">
+        <field name="name">BIN Card - Item Wise</field>
+        <field name="res_model">bin.card.item.wise.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ══════════════════════════════════════════
+         Menu Item — under Inventory > Reporting
+    ══════════════════════════════════════════ -->
+    <menuitem
+        id="menu_bin_card_item_wise_report"
+        name="BIN Card - Item Wise"
+        parent="stock.menu_warehouse_report"
+        action="action_bin_card_item_wise_wizard"
+        sequence="26"
+    />
+
+</odoo>

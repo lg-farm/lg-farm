@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_day_sales_details_wizard_form" model="ir.ui.view">
+        <field name="name">day.sales.details.wizard.form</field>
+        <field name="model">day.sales.details.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Day Sales Details Report">
+                <group>
+                    <group>
+                        <field name="date_from" />
+                        <field name="date_to" />
+                        <field name="company_id" groups="base.group_multi_company" />
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_generate_excel" string="Print Excel" type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel" />
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_day_sales_details_wizard" model="ir.actions.act_window">
+        <field name="name">Day Sales Details Report</field>
+        <field name="res_model">day.sales.details.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem
+        id="menu_day_sales_details_report"
+        name="Day Sales Details"
+        parent="point_of_sale.menu_point_rep"
+        action="action_day_sales_details_wizard"
+        sequence="30"
+    />
+
+</odoo>

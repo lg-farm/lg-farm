@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════
+         BIN CARD Wizard Form View
+    ══════════════════════════════════════════ -->
+    <record id="view_bin_card_wizard_form" model="ir.ui.view">
+        <field name="name">bin.card.wizard.form</field>
+        <field name="model">bin.card.wizard</field>
+        <field name="arch" type="xml">
+            <form string="BIN Card Report">
+                <group string="Filter Options">
+                    <group>
+                        <field name="date_from" />
+                        <field name="date_to" />
+                    </group>
+                    <group>
+                        <field name="warehouse_id" />
+                        <field name="location_id" />
+                    </group>
+                </group>
+                <footer>
+                    <button
+                        name="action_print_report"
+                        string="Generate Excel Report"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button string="Cancel" class="btn-secondary" special="cancel" />
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════
+         BIN CARD Action — opens wizard
+    ══════════════════════════════════════════ -->
+    <record id="action_bin_card_wizard" model="ir.actions.act_window">
+        <field name="name">BIN Card Report</field>
+        <field name="res_model">bin.card.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ══════════════════════════════════════════
+         Menu Items — under Inventory > Reporting
+    ══════════════════════════════════════════ -->
+    <menuitem
+        id="menu_bin_card_report"
+        name="BIN Card"
+        parent="stock.menu_warehouse_report"
+        action="action_bin_card_wizard"
+        sequence="25"
+    />
+
+</odoo>

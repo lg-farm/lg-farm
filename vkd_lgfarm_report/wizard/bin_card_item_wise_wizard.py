@@ -1,6 +1,7 @@
 import io
 import base64
-from odoo import models, fields
+import datetime
+from odoo import models, fields, api
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -15,16 +16,31 @@ class BinCardItemWiseWizard(models.TransientModel):
     product_ids  = fields.Many2many('product.product', string='Products',
                                     help='Leave empty to include all products')
     warehouse_id = fields.Many2one('stock.warehouse', string='Warehouse')
-    location_id  = fields.Many2one(
-        'stock.location', string='Location',
-        domain=[('usage', '=', 'internal')],
+    location_id  = fields.Many2one('stock.location', string='Location')
+
+    # Computed domain field — drives the location_id domain in the view
+    location_domain = fields.Binary(
+        string='Location Domain',
+        compute='_compute_location_domain',
     )
 
-    # ── helpers ──────────────────────────────────────────────────────────────
-    def _thin_border(self):
-        s = Side(style='thin')
-        return Border(left=s, right=s, top=s, bottom=s)
+    @api.depends('warehouse_id')
+    def _compute_location_domain(self):
+        for rec in self:
+            if rec.warehouse_id:
+                child_locs = self.env['stock.location'].search([
+                    ('id', 'child_of', rec.warehouse_id.view_location_id.id),
+                    ('usage', '=', 'internal'),
+                ])
+                rec.location_domain = [('id', 'in', child_locs.ids)]
+            else:
+                rec.location_domain = [('usage', '=', 'internal')]
 
+    @api.onchange('warehouse_id')
+    def _onchange_warehouse_id(self):
+        self.location_id = False
+
+    # ── helpers ───────────────────────────────────────────────────────────────
     def _fill(self, hex_color):
         return PatternFill(fill_type='solid', fgColor=hex_color)
 
@@ -52,7 +68,7 @@ class BinCardItemWiseWizard(models.TransientModel):
                 move.picking_type_id.code, move.picking_type_id.name)
         return 'ADJ'
 
-    # ── main action ──────────────────────────────────────────────────────────
+    # ── main action ───────────────────────────────────────────────────────────
     def action_print_report(self):
         self.ensure_one()
         wb = Workbook()
@@ -62,41 +78,42 @@ class BinCardItemWiseWizard(models.TransientModel):
         num_fmt  = '#,##0.00'
         date_fmt = 'DD/MM/YYYY'
 
-        # ── column widths ─────────────────────────────────────────────────────
-        # Date, Item Code, Item Name, Transactions, Reference No, QTY, Balance
         for i, w in enumerate([14, 14, 26, 14, 26, 12, 12], start=1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
-        # ── Row 1 — Title ─────────────────────────────────────────────────────
+        # Row 1 — Title
         ws.row_dimensions[1].height = 28
         ws.merge_cells('A1:G1')
         ws['A1'].value     = 'BIN CARD - ITEM WISE REPORT'
         ws['A1'].font      = Font(name='Arial', size=14, bold=True)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
 
-        # ── Row 2 — Meta ──────────────────────────────────────────────────────
+        # Row 2 — Meta
         ws.row_dimensions[2].height = 18
-        ws['A2'].value = 'Company:';  ws['A2'].font = Font(name='Arial', size=9, bold=True)
+        ws['A2'].value = 'Company:'
+        ws['A2'].font  = Font(name='Arial', size=9, bold=True)
         ws.merge_cells('B2:C2')
         ws['B2'].value = self.env.company.name
         self._style_data(ws['B2'], horizontal='left')
 
-        ws['D2'].value = 'Date From:'; ws['D2'].font = Font(name='Arial', size=9, bold=True)
+        ws['D2'].value = 'Date From:'
+        ws['D2'].font  = Font(name='Arial', size=9, bold=True)
         ws['E2'].value = self.date_from
         self._style_data(ws['E2'], number_format=date_fmt)
 
-        ws['F2'].value = 'Date To:';  ws['F2'].font = Font(name='Arial', size=9, bold=True)
+        ws['F2'].value = 'Date To:'
+        ws['F2'].font  = Font(name='Arial', size=9, bold=True)
         ws['G2'].value = self.date_to
         self._style_data(ws['G2'], number_format=date_fmt)
 
-        # ── Row 4 — Column headers ────────────────────────────────────────────
+        # Row 4 — Column headers
         ws.row_dimensions[4].height = 22
         headers = ['Date', 'Item Code', 'Item Name', 'Transactions', 'Reference No', 'QTY', 'Balance']
         for col_idx, header in enumerate(headers, start=1):
             cell = ws.cell(row=4, column=col_idx, value=header)
             self._style_header(cell, '1F3864')
 
-        # ── Fetch Data ────────────────────────────────────────────────────────
+        # Fetch Data
         if self.location_id:
             target_loc_ids = [self.location_id.id]
         elif self.warehouse_id:
@@ -109,72 +126,117 @@ class BinCardItemWiseWizard(models.TransientModel):
                 ('usage', '=', 'internal')
             ]).ids
 
-        domain = [
-            ('state', '=', 'done'),
-        ]
-        if self.product_ids:
-            domain.append(('product_id', 'in', self.product_ids.ids))
-        
         start_dt = str(self.date_from) + ' 00:00:00'
         end_dt   = str(self.date_to)   + ' 23:59:59'
+        
+        # Build move domain
+        move_domain = [
+            ('state', '=', 'done'),
+            ('date', '<=', end_dt),
+            '|',
+            ('location_id', 'in', target_loc_ids),
+            ('location_dest_id', 'in', target_loc_ids),
+        ]
+        if self.product_ids:
+            move_domain.append(('product_id', 'in', self.product_ids.ids))
+        
+        # Fetch moves in bulk
+        move_fields = ['product_id', 'product_qty', 'date', 'location_id', 'location_dest_id', 'reference', 'origin', 'picking_type_id']
+        all_moves = self.env['stock.move'].search_read(move_domain, move_fields)
 
-        data_row = 5
-        # Fetch all products that have moves
+        # Group moves by product
+        moves_by_product = {}
+        for m in all_moves:
+            p_id = m['product_id'][0]
+            if p_id not in moves_by_product:
+                moves_by_product[p_id] = []
+            moves_by_product[p_id].append(m)
+
+        # Determine which products to report on
         products = self.env['product.product'].search(
-            [('id', 'in', self.product_ids.ids)] if self.product_ids else [('type', '=', 'consu')],
+            [('id', 'in', self.product_ids.ids)] if self.product_ids else [('type', '=', 'product')],
             order='default_code, name'
         )
 
-        for product in products:
-            # 1. Opening Balance
-            prior_moves = self.env['stock.move'].search([
-                ('product_id', '=', product.id),
-                ('state', '=', 'done'),
-                ('date', '<', start_dt),
-            ])
-            running_bal = 0.0
-            for m in prior_moves:
-                if m.location_dest_id.id in target_loc_ids: running_bal += m.product_qty
-                if m.location_id.id      in target_loc_ids: running_bal -= m.product_qty
+        # Build move domain
+        move_domain = [
+            ('state', '=', 'done'),
+            ('date', '<=', end_dt),
+            ('product_id', 'in', products.ids),
+            '|',
+            ('location_id', 'in', target_loc_ids),
+            ('location_dest_id', 'in', target_loc_ids),
+        ]
+        
+        # Fetch moves in bulk
+        move_fields = ['product_id', 'product_qty', 'date', 'location_id', 'location_dest_id', 'reference', 'origin', 'picking_type_id']
+        all_moves = self.env['stock.move'].search_read(move_domain, move_fields)
 
-            # 2. Period Moves
-            period_moves = self.env['stock.move'].search([
-                ('product_id', '=', product.id),
-                ('state', '=', 'done'),
-                ('date', '>=', start_dt),
-                ('date', '<=', end_dt),
-                '|', ('location_id', 'in', target_loc_ids), ('location_dest_id', 'in', target_loc_ids)
-            ], order='date asc')
+        # Group moves by product
+        moves_by_product = {}
+        for m in all_moves:
+            p_id = m['product_id'][0]
+            if p_id not in moves_by_product:
+                moves_by_product[p_id] = []
+            moves_by_product[p_id].append(m)
+
+        data_row = 5
+        for product in products:
+            p_moves = moves_by_product.get(product.id, [])
+            # Sort by date for correct running balance
+            p_moves.sort(key=lambda x: x['date'])
+
+            running_bal = 0.0
+            period_moves = []
+            
+            for m in p_moves:
+                m_date = str(m['date'])
+                if m_date < start_dt:
+                    if m['location_dest_id'][0] in target_loc_ids: running_bal += m['product_qty']
+                    if m['location_id'][0]      in target_loc_ids: running_bal -= m['product_qty']
+                else:
+                    period_moves.append(m)
 
             if not period_moves:
                 continue
 
+            # 2. Rows for Period Moves
             for move in period_moves:
-                is_in  = move.location_dest_id.id in target_loc_ids
-                is_out = move.location_id.id      in target_loc_ids
-                
+                is_in  = move['location_dest_id'][0] in target_loc_ids
+                is_out = move['location_id'][0]      in target_loc_ids
+
                 if is_in and is_out:
-                    # Internal transfer - show but net effect is zero
                     qty_change = 0.0
                 elif is_in:
-                    qty_change = move.product_qty
+                    qty_change = move['product_qty']
                 elif is_out:
-                    qty_change = -move.product_qty
+                    qty_change = -move['product_qty']
                 else:
                     continue
 
                 running_bal += qty_change
-                trans_type   = self._get_trans_type(move)
-                ref          = move.reference or move.origin or ''
+                
+                # Fetching the move record to use the existing _get_trans_type or similar
+                # Since search_read returns a dict, we can either browse or adapt.
+                # I'll adapt to use browse once per move to ensure accuracy if needed, 
+                # but for performance I'll use the dict data for trans_type if possible.
+                # Actually, I'll browse the move for trans_type to keep it "like previous"
+                m_rec = self.env['stock.move'].browse(move['id'])
+                trans_type = self._get_trans_type(m_rec)
+                ref = m_rec.reference or m_rec.origin or ''
+
+                m_dt = move['date']
+                if isinstance(m_dt, str):
+                    m_dt = datetime.datetime.strptime(m_dt, '%Y-%m-%d %H:%M:%S')
 
                 row_values = [
-                    move.date.date(),
+                    m_dt.date() if hasattr(m_dt, 'date') else m_dt,
                     product.default_code or '',
                     product.name,
                     trans_type,
                     ref,
                     abs(qty_change) if not (is_in and is_out) else 0.0,
-                    running_bal
+                    running_bal,
                 ]
 
                 ws.row_dimensions[data_row].height = 18
@@ -190,7 +252,7 @@ class BinCardItemWiseWizard(models.TransientModel):
                         self._style_data(cell)
                 data_row += 1
 
-        # ── Save & return ─────────────────────────────────────────────────────
+        # Save & return
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)

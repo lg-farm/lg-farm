@@ -16,7 +16,13 @@
                     </group>
                     <group>
                         <field name="warehouse_id" />
-                        <field name="location_id" />
+                        <!--
+                            location_domain is a computed Binary field on the model.
+                            Odoo 17/18/19 respects `domain` pointing to a field name
+                            and re-evaluates it reactively whenever warehouse_id changes.
+                        -->
+                        <field name="location_domain" invisible="1" />
+                        <field name="location_id" domain="location_domain" />
                     </group>
                 </group>
                 <group string="Product Filter">

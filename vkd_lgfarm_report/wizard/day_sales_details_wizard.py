@@ -82,6 +82,8 @@ class DaySalesDetailsWizard(models.TransientModel):
         self._style_data(ws['E5'], horizontal='left', number_format='DD-MM-YYYY')
 
         # Table Headers
+        currency_name = self.company_id.currency_id.name or 'Rs.'
+        
         headers_row = 7
         ws.merge_cells('A7:A8')
         ws['A7'] = 'Names of Factory Outlets'
@@ -92,7 +94,7 @@ class DaySalesDetailsWizard(models.TransientModel):
         self._style_header(ws['B7'], mid_blue)
 
         ws.merge_cells('C7:F7')
-        ws['C7'] = 'Sales Types (Rs.)'
+        ws['C7'] = f'Sales Types ({currency_name})'
         self._style_header(ws['C7'], mid_blue)
         for col in ['C', 'D', 'E', 'F']:
             self._style_header(ws[f'{col}8'], mid_blue)
@@ -106,7 +108,7 @@ class DaySalesDetailsWizard(models.TransientModel):
         self._style_header(ws['G7'], mid_blue)
 
         ws.merge_cells('H7:J7')
-        ws['H7'] = 'Cash Deposit from Cash Sales (Rs.)'
+        ws['H7'] = f'Cash Deposit from Cash Sales ({currency_name})'
         self._style_header(ws['H7'], mid_blue)
         for col in ['H', 'I', 'J']:
             self._style_header(ws[f'{col}8'], mid_blue)
@@ -175,15 +177,20 @@ class DaySalesDetailsWizard(models.TransientModel):
                     ('amount', '!=', 0)
                 ])
                 for line in st_lines:
+                    is_money_in_out = False
                     if line.payment_ref:
                         ref = line.payment_ref
                         if '-out-' in ref:
                             remarks.append(ref.split('-out-')[-1].strip())
+                            is_money_in_out = True
                         elif '-in-' in ref:
                             remarks.append(ref.split('-in-')[-1].strip())
+                            is_money_in_out = True
                     
-                    if line.amount > 0:
-                        deposited_amount += line.amount
+                    # Deposited amount is identified as "Money Out" (negative amount)
+                    # that was explicitly marked as a Cash In/Out transaction.
+                    if is_money_in_out and line.amount < 0:
+                        deposited_amount += abs(line.amount)
                         deposited_date = line.date
             
             remark_text = ", ".join(set(remarks)) if remarks else ""

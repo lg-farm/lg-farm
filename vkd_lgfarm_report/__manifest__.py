@@ -1,6 +1,6 @@
 {
     'name': 'Custom Inventory & POS Reports',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
     'category': 'Extra Tools',
     'summary': 'BIN Card & Day Sales Details Excel Reports',
     'description': """
@@ -9,7 +9,8 @@
         2. BIN CARD Item Wise - Filtered stock movement per product
         3. Day Sales Details  - POS sales summary by outlet and payment type
     """,
-    'author': 'Your Company',
+    'author': 'VK DATA ApS',
+    'website': 'https://vkdata.dk',
     'depends': ['stock', 'point_of_sale', 'account'],
     'data': [
         'security/ir.model.access.csv',

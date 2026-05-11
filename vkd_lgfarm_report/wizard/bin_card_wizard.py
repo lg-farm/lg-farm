@@ -1,6 +1,6 @@
 import io
 import base64
-from odoo import models, fields
+from odoo import models, fields, api
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -13,12 +13,31 @@ class BinCardWizard(models.TransientModel):
     date_from    = fields.Date(string='Date From', required=True, default=fields.Date.context_today)
     date_to      = fields.Date(string='Date To',   required=True, default=fields.Date.context_today)
     warehouse_id = fields.Many2one('stock.warehouse', string='Warehouse')
-    location_id  = fields.Many2one(
-        'stock.location', string='Location',
-        domain=[('usage', '=', 'internal')],
+    location_id  = fields.Many2one('stock.location', string='Location')
+
+    # Computed domain field — drives the location_id domain in the view
+    location_domain = fields.Binary(
+        string='Location Domain',
+        compute='_compute_location_domain',
     )
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    @api.depends('warehouse_id')
+    def _compute_location_domain(self):
+        for rec in self:
+            if rec.warehouse_id:
+                child_locs = self.env['stock.location'].search([
+                    ('id', 'child_of', rec.warehouse_id.view_location_id.id),
+                    ('usage', '=', 'internal'),
+                ])
+                rec.location_domain = [('id', 'in', child_locs.ids)]
+            else:
+                rec.location_domain = [('usage', '=', 'internal')]
+
+    @api.onchange('warehouse_id')
+    def _onchange_warehouse_id(self):
+        self.location_id = False
+
+    # ── helpers ───────────────────────────────────────────────────────────────
     def _thin_border(self):
         s = Side(style='thin')
         return Border(left=s, right=s, top=s, bottom=s)
@@ -73,83 +92,19 @@ class BinCardWizard(models.TransientModel):
                 if m.location_id.usage      == 'internal': qty -= m.product_qty
         return qty
 
-    # ── main action ──────────────────────────────────────────────────────────
+    # ── main action ───────────────────────────────────────────────────────────
     def action_print_report(self):
         self.ensure_one()
         wb = Workbook()
         ws = wb.active
         ws.title = 'BIN CARD'
 
-        border      = self._thin_border()
         dark_blue   = '1F3864'
         mid_blue    = '2E75B6'
-        center_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
         center      = Alignment(horizontal='center', vertical='center')
-        left        = Alignment(horizontal='left',   vertical='center')
-        right       = Alignment(horizontal='right',  vertical='center')
         num_fmt     = '#,##0.00'
-        val_fmt     = '#,##0.00'
 
-        # ── column widths ────────────────────────────────────────────────────
-        # 18 columns: A(Code), B(Name), C(UOM), D-F(Open), G-I(Recv), J-L(Issue), M-O(Adj), P-R(Closing)
-        col_widths = [14, 24, 10, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12]
-        for i, w in enumerate(col_widths, start=1):
-            ws.column_dimensions[get_column_letter(i)].width = w
-
-        # ── Row 1 — Title ────────────────────────────────────────────────────
-        ws.row_dimensions[1].height = 28
-        ws.merge_cells('A1:R1')
-        title_cell = ws['A1']
-        title_cell.value = 'BIN CARD REPORT'
-        title_cell.font      = Font(name='Arial', size=14, bold=True)
-        title_cell.alignment = center
-
-        # ── Row 2 — Meta ─────────────────────────────────────────────────────
-        ws.row_dimensions[2].height = 18
-        ws['A2'].value = 'Company:';  ws['A2'].font = Font(name='Arial', size=9, bold=True)
-        ws.merge_cells('B2:C2')
-        ws['B2'].value = self.env.company.name
-        self._style_data(ws['B2'], horizontal='left')
-
-        ws['D2'].value = 'Date From:'; ws['D2'].font = Font(name='Arial', size=9, bold=True)
-        ws['E2'].value = self.date_from
-        self._style_data(ws['E2'], number_format='DD/MM/YYYY')
-
-        ws['F2'].value = 'Date To:';  ws['F2'].font = Font(name='Arial', size=9, bold=True)
-        ws['G2'].value = self.date_to
-        self._style_data(ws['G2'], number_format='DD/MM/YYYY')
-
-        # ── Row 4 — Group headers ─────────────────────────────────────────────
-        ws.row_dimensions[4].height = 32
-        for col in ['A', 'B', 'C']:
-            ws.merge_cells(f'{col}4:{col}5')
-            self._style_header(ws[f'{col}4'], dark_blue)
-
-        ws['A4'].value = 'Item Code'
-        ws['B4'].value = 'Item Name'
-        ws['C4'].value = 'UOM'
-
-        merge_groups = [
-            ('D4', 'F4', 'Open Balance'),
-            ('G4', 'I4', 'Receipts'),
-            ('J4', 'L4', 'Issues'),
-            ('M4', 'O4', 'Adjustments'),
-            ('P4', 'R4', 'Closing Balance'),
-        ]
-        for start, end, label in merge_groups:
-            ws.merge_cells(f'{start}:{end}')
-            ws[start].value = label
-            self._style_header(ws[start], mid_blue)
-
-        # ── Row 5 — Sub-headers ───────────────────────────────────────────────
-        ws.row_dimensions[5].height = 22
-        sub_headers = ['Quantity', 'Per Value', 'Value'] * 5
-        for i, val in enumerate(sub_headers, start=4):
-            cell = ws.cell(row=5, column=i, value=val)
-            self._style_header(cell, mid_blue)
-
-        # ── Data Collection ───────────────────────────────────────────────────
-        # Determine target locations
+        # ── Data Collection & Analysis ────────────────────────────────────────
         if self.location_id:
             target_loc_ids = [self.location_id.id]
         elif self.warehouse_id:
@@ -162,96 +117,157 @@ class BinCardWizard(models.TransientModel):
                 ('usage', '=', 'internal')
             ]).ids
 
-        # Fetch products
-        products = self.env['product.product'].search([('type', '=', 'consu')], order='default_code, name')
-        # Wait, usually we want 'product' (storable) in Odoo 18, it's 'consu' with 'is_storable' or similar
-        # In Odoo 18, the type for storable is 'consu' but we check if it's storable.
-        # Actually, let's just get all products that have stock moves.
-        product_ids_with_moves = self.env['stock.move'].search([
+        start_dt = str(self.date_from) + ' 00:00:00'
+        end_dt   = str(self.date_to)   + ' 23:59:59'
+
+        move_domain = [
             ('state', '=', 'done'),
-        ]).mapped('product_id')
-        products = product_ids_with_moves.sorted(key=lambda p: (p.default_code or '', p.name or ''))
+            ('date', '<=', end_dt),
+            '|',
+            ('location_id', 'in', target_loc_ids),
+            ('location_dest_id', 'in', target_loc_ids),
+        ]
+        move_fields = ['product_id', 'product_qty', 'date', 'location_id', 'location_dest_id']
+        all_moves = self.env['stock.move'].search_read(move_domain, move_fields)
 
-        data_row = 6
+        moves_by_product = {}
+        for m in all_moves:
+            p_id = m['product_id'][0]
+            if p_id not in moves_by_product:
+                moves_by_product[p_id] = []
+            moves_by_product[p_id].append(m)
+
+        product_ids_to_process = list(moves_by_product.keys())
+        products = self.env['product.product'].browse(product_ids_to_process).sorted(
+            key=lambda p: (p.default_code or '', p.name or '')
+        )
+
+        loc_ids = set()
+        for m in all_moves:
+            loc_ids.add(m['location_id'][0])
+            loc_ids.add(m['location_dest_id'][0])
+        loc_data = {l.id: l.usage for l in self.env['stock.location'].browse(list(loc_ids))}
+
+        # Pre-calculate data to decide which columns to show
+        all_rows = []
+        has_receipts = False
+        has_issues = False
+        has_adjs = False
+
         for product in products:
-            # 1. Opening Balance
-            # We need qty at date_from 00:00:00
-            start_dt = str(self.date_from) + ' 00:00:00'
-            end_dt   = str(self.date_to)   + ' 23:59:59'
-
-            # Opening Qty
-            prior_moves = self.env['stock.move'].search([
-                ('product_id', '=', product.id),
-                ('state', '=', 'done'),
-                ('date', '<', start_dt),
-            ])
-            open_qty = 0.0
-            for m in prior_moves:
-                if m.location_dest_id.id in target_loc_ids: open_qty += m.product_qty
-                if m.location_id.id      in target_loc_ids: open_qty -= m.product_qty
-
-            # 2. Period Moves
-            period_moves = self.env['stock.move'].search([
-                ('product_id', '=', product.id),
-                ('state', '=', 'done'),
-                ('date', '>=', start_dt),
-                ('date', '<=', end_dt),
-                '|', ('location_id', 'in', target_loc_ids), ('location_dest_id', 'in', target_loc_ids)
-            ])
-
-            qty_receipt = 0.0
-            qty_issue   = 0.0
-            qty_adj     = 0.0
-
-            for m in period_moves:
-                is_in  = m.location_dest_id.id in target_loc_ids
-                is_out = m.location_id.id      in target_loc_ids
+            p_moves = moves_by_product.get(product.id, [])
+            open_qty, qty_receipt, qty_issue, qty_adj = 0.0, 0.0, 0.0, 0.0
+            
+            for m in p_moves:
+                m_date = str(m['date'])
+                is_in  = m['location_dest_id'][0] in target_loc_ids
+                is_out = m['location_id'][0]      in target_loc_ids
                 
-                if is_in and is_out:
-                    # Internal transfer within our target set - ignore for total balance
-                    continue
-                
-                if is_in:
-                    # Incoming to our target set
-                    if m.location_id.usage == 'supplier':
-                        qty_receipt += m.product_qty
-                    elif m.location_id.usage in ('inventory', 'production'):
-                        qty_adj += m.product_qty
-                    else:
-                        # Other non-internal sources (e.g. transit or other warehouses)
-                        qty_receipt += m.product_qty
-                elif is_out:
-                    # Outgoing from our target set
-                    if m.location_dest_id.usage == 'customer':
-                        qty_issue += m.product_qty
-                    elif m.location_dest_id.usage in ('inventory', 'production'):
-                        qty_adj -= m.product_qty
-                    else:
-                        # Other non-internal destinations
-                        qty_issue += m.product_qty
+                if m_date < start_dt:
+                    if is_in:  open_qty += m['product_qty']
+                    if is_out: open_qty -= m['product_qty']
+                else:
+                    if is_in and is_out: continue
+                    if is_in:
+                        src_usage = loc_data.get(m['location_id'][0])
+                        if src_usage == 'supplier': qty_receipt += m['product_qty']
+                        elif src_usage in ('inventory', 'production'): qty_adj += m['product_qty']
+                        else: qty_receipt += m['product_qty']
+                    elif is_out:
+                        dest_usage = loc_data.get(m['location_dest_id'][0])
+                        if dest_usage == 'customer': qty_issue += m['product_qty']
+                        elif dest_usage in ('inventory', 'production'): qty_adj -= m['product_qty']
+                        else: qty_issue += m['product_qty']
 
             closing_qty = open_qty + qty_receipt - qty_issue + qty_adj
-            per_value   = product.standard_price
+            if open_qty == 0 and qty_receipt == 0 and qty_issue == 0 and qty_adj == 0 and closing_qty == 0:
+                continue
 
-            row_data = [
-                product.default_code or '',
-                product.name,
-                product.uom_id.name,
-                open_qty, per_value, open_qty * per_value,
-                qty_receipt, per_value, qty_receipt * per_value,
-                qty_issue, per_value, qty_issue * per_value,
-                qty_adj, per_value, qty_adj * per_value,
-                closing_qty, per_value, closing_qty * per_value,
-            ]
+            if qty_receipt != 0: has_receipts = True
+            if qty_issue != 0:   has_issues = True
+            if qty_adj != 0:     has_adjs = True
 
-            ws.row_dimensions[data_row].height = 18
+            all_rows.append({
+                'product': product,
+                'open': open_qty,
+                'receipt': qty_receipt,
+                'issue': qty_issue,
+                'adj': qty_adj,
+                'close': closing_qty,
+                'price': product.standard_price,
+            })
+
+        # ── Column definitions based on analysis ──────────────────────────────
+        # Static first 3 columns
+        col_groups = [
+            ('Open Balance', 'open'),
+        ]
+        if has_receipts: col_groups.append(('Receipts', 'receipt'))
+        if has_issues:   col_groups.append(('Issues', 'issue'))
+        if has_adjs:     col_groups.append(('Adjustments', 'adj'))
+        col_groups.append(('Closing Balance', 'close'))
+
+        total_cols = 3 + (len(col_groups) * 3)
+        last_col_letter = get_column_letter(total_cols)
+
+        # ── Setup Sheet ───────────────────────────────────────────────────────
+        col_widths = [14, 24, 10] + ([12, 12, 12] * len(col_groups))
+        for i, w in enumerate(col_widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+        ws.merge_cells(f'A1:{last_col_letter}1')
+        title_cell = ws['A1']
+        title_cell.value = 'BIN CARD REPORT'
+        title_cell.font = Font(name='Arial', size=14, bold=True)
+        title_cell.alignment = center
+
+        # Row 2 (Meta) stays mostly same
+        ws['A2'].value = 'Company:'; ws['A2'].font = Font(name='Arial', size=9, bold=True)
+        ws.merge_cells('B2:C2'); ws['B2'].value = self.env.company.name
+        self._style_data(ws['B2'], horizontal='left')
+        ws['D2'].value = 'Date From:'; ws['D2'].font = Font(name='Arial', size=9, bold=True)
+        ws['E2'].value = self.date_from; self._style_data(ws['E2'], number_format='DD/MM/YYYY')
+        ws['F2'].value = 'Date To:'; ws['F2'].font = Font(name='Arial', size=9, bold=True)
+        ws['G2'].value = self.date_to; self._style_data(ws['G2'], number_format='DD/MM/YYYY')
+
+        # Row 4 & 5 (Headers)
+        ws.row_dimensions[4].height = 32
+        for col_idx, label in enumerate(['Item Code', 'Item Name', 'UOM'], start=1):
+            ws.merge_cells(start_row=4, start_column=col_idx, end_row=5, end_column=col_idx)
+            self._style_header(ws.cell(row=4, column=col_idx, value=label), dark_blue)
+
+        current_col = 4
+        for label, _key in col_groups:
+            start_col = get_column_letter(current_col)
+            end_col   = get_column_letter(current_col + 2)
+            ws.merge_cells(f'{start_col}4:{end_col}4')
+            ws[f'{start_col}4'].value = label
+            self._style_header(ws[f'{start_col}4'], mid_blue)
+            
+            for sub_idx, sub_label in enumerate(['Quantity', 'Per Value', 'Value']):
+                cell = ws.cell(row=5, column=current_col + sub_idx, value=sub_label)
+                self._style_header(cell, mid_blue)
+            current_col += 3
+
+        # ── Populate Data Rows ────────────────────────────────────────────────
+        data_row_idx = 6
+        for row in all_rows:
+            p = row['product']
+            row_data = [p.default_code or '', p.name, p.uom_id.name]
+            
+            for _label, key in col_groups:
+                qty = row[key]
+                val = row['price']
+                row_data.extend([qty, val, qty * val])
+
+            ws.row_dimensions[data_row_idx].height = 18
             for col_idx, value in enumerate(row_data, start=1):
-                cell = ws.cell(row=data_row, column=col_idx, value=value)
+                cell = ws.cell(row=data_row_idx, column=col_idx, value=value)
                 if col_idx <= 3:
                     self._style_data(cell, horizontal='left' if col_idx == 2 else 'center')
                 else:
                     self._style_data(cell, horizontal='right', number_format=num_fmt)
-            data_row += 1
+            data_row_idx += 1
 
         # ── Save & return ─────────────────────────────────────────────────────
         output = io.BytesIO()

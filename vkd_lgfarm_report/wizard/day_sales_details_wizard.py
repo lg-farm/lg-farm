@@ -121,8 +121,13 @@ class DaySalesDetailsWizard(models.TransientModel):
         self._style_header(ws['K7'], mid_blue)
 
         # Data Fetching
+        # Build date boundaries (timezone-naive UTC datetimes for domain filtering)
+        from datetime import datetime, date as date_type
+        date_from_dt = datetime(self.date_from.year, self.date_from.month, self.date_from.day, 0, 0, 0)
+        date_to_dt   = datetime(self.date_to.year,   self.date_to.month,   self.date_to.day,   23, 59, 59)
+
         pos_configs = self.env['pos.config'].search([('company_id', '=', self.company_id.id)])
-        
+
         row = 9
         total_credit = 0.0
         total_cheque = 0.0
@@ -136,42 +141,57 @@ class DaySalesDetailsWizard(models.TransientModel):
             # Find sessions for this config on the selected date range
             sessions = self.env['pos.session'].search([
                 ('config_id', '=', config.id),
-                ('start_at', '>=', fields.Datetime.to_string(fields.Datetime.now().replace(year=self.date_from.year, month=self.date_from.month, day=self.date_from.day, hour=0, minute=0, second=0))),
-                ('start_at', '<=', fields.Datetime.to_string(fields.Datetime.now().replace(year=self.date_to.year, month=self.date_to.month, day=self.date_to.day, hour=23, minute=59, second=59))),
+                ('start_at', '>=', fields.Datetime.to_string(date_from_dt)),
+                ('start_at', '<=', fields.Datetime.to_string(date_to_dt)),
             ])
 
-            opening_balance = sum(sessions.mapped('cash_register_balance_start'))
-            
-            # Aggregate payments by type
-            credit = 0.0
-            cheque = 0.0
-            card = 0.0
-            cash = 0.0
-            
-            orders = self.env['pos.order'].search([('session_id', 'in', sessions.ids)])
-            for payment in orders.mapped('payment_ids'):
-                method_name = payment.payment_method_id.name.lower()
-                amount = payment.amount
-                if 'cash' in method_name:
-                    cash += amount
-                elif 'card' in method_name or 'visa' in method_name or 'master' in method_name:
-                    card += amount
-                elif 'cheque' in method_name or 'check' in method_name:
-                    cheque += amount
-                elif 'credit' in method_name:
-                    credit += amount
-                else:
-                    card += amount
+            if not sessions:
+                # Show a zero row for configs with no sessions in the range
+                ws.cell(row=row, column=1, value=config.name)
+                for c in range(2, 12):
+                    ws.cell(row=row, column=c, value=0.0 if c != 8 and c != 9 else '')
+                self._style_data(ws.cell(row=row, column=1), horizontal='left')
+                for c in range(2, 8):
+                    self._style_data(ws.cell(row=row, column=c), horizontal='right', number_format=num_fmt)
+                self._style_data(ws.cell(row=row, column=8), horizontal='left')
+                self._style_data(ws.cell(row=row, column=9), horizontal='center', number_format='DD-MM-YYYY')
+                self._style_data(ws.cell(row=row, column=10), horizontal='right', number_format=num_fmt)
+                self._style_data(ws.cell(row=row, column=11), horizontal='right', number_format=num_fmt)
+                row += 1
+                continue
 
-            total_sales = credit + cheque + card + cash
-            
-            # Cash In / Out Logic (Remark = Reasons from Cash In/Out)
-            deposited_amount = 0.0
-            remarks = []
-            deposited_date = ''
-            
+            # ---------- One row per session ----------
             for session in sessions:
-                # Find bank statement lines (Cash In/Out) linked to this session
+                opening_balance = session.cash_register_balance_start
+
+                # Aggregate payments by type for this session only
+                credit = 0.0
+                cheque = 0.0
+                card   = 0.0
+                cash   = 0.0
+
+                orders = self.env['pos.order'].search([('session_id', '=', session.id)])
+                for payment in orders.mapped('payment_ids'):
+                    method_name = payment.payment_method_id.name.lower()
+                    amount = payment.amount
+                    if 'cash' in method_name:
+                        cash += amount
+                    elif 'card' in method_name or 'visa' in method_name or 'master' in method_name:
+                        card += amount
+                    elif 'cheque' in method_name or 'check' in method_name:
+                        cheque += amount
+                    elif 'credit' in method_name:
+                        credit += amount
+                    else:
+                        card += amount
+
+                total_sales = credit + cheque + card + cash
+
+                # Cash In / Out Logic for this session
+                deposited_amount = 0.0
+                remarks = []
+                deposited_date = ''
+
                 st_lines = self.env['account.bank.statement.line'].search([
                     ('pos_session_id', '=', session.id),
                     ('amount', '!=', 0)
@@ -186,46 +206,50 @@ class DaySalesDetailsWizard(models.TransientModel):
                         elif '-in-' in ref:
                             remarks.append(ref.split('-in-')[-1].strip())
                             is_money_in_out = True
-                    
-                    # Deposited amount is identified as "Money Out" (negative amount)
-                    # that was explicitly marked as a Cash In/Out transaction.
+
                     if is_money_in_out and line.amount < 0:
                         deposited_amount += abs(line.amount)
                         deposited_date = line.date
-            
-            remark_text = ", ".join(set(remarks)) if remarks else ""
-            variance = cash - deposited_amount
 
-            # Fill Row
-            ws.cell(row=row, column=1, value=config.name)
-            ws.cell(row=row, column=2, value=opening_balance)
-            ws.cell(row=row, column=3, value=credit)
-            ws.cell(row=row, column=4, value=cheque)
-            ws.cell(row=row, column=5, value=card)
-            ws.cell(row=row, column=6, value=cash)
-            ws.cell(row=row, column=7, value=total_sales)
-            ws.cell(row=row, column=8, value=remark_text)
-            ws.cell(row=row, column=9, value=deposited_date)
-            ws.cell(row=row, column=10, value=deposited_amount)
-            ws.cell(row=row, column=11, value=variance)
+                remark_text = ", ".join(set(remarks)) if remarks else ""
+                variance = cash - deposited_amount
 
-            # Styling
-            self._style_data(ws.cell(row=row, column=1), horizontal='left')
-            for c in range(2, 8):
-                self._style_data(ws.cell(row=row, column=c), horizontal='right', number_format=num_fmt)
-            self._style_data(ws.cell(row=row, column=8), horizontal='left')
-            self._style_data(ws.cell(row=row, column=9), horizontal='center', number_format='DD-MM-YYYY')
-            self._style_data(ws.cell(row=row, column=10), horizontal='right', number_format=num_fmt)
-            self._style_data(ws.cell(row=row, column=11), horizontal='right', number_format=num_fmt)
+                # Build the outlet label: "Furniture Shop(00001)"
+                # session.name is typically something like "Furniture Shop/00001"
+                # Extract the sequence part after the last '/' if present
+                session_seq = session.name.split('/')[-1] if '/' in session.name else session.name
+                outlet_label = f"{config.name}({session_seq})"
 
-            total_credit += credit
-            total_cheque += cheque
-            total_card += card
-            total_cash += cash
-            total_sales_all += total_sales
-            total_deposited += deposited_amount
-            total_variance += variance
-            row += 1
+                # Fill Row
+                ws.cell(row=row, column=1, value=outlet_label)
+                ws.cell(row=row, column=2, value=opening_balance)
+                ws.cell(row=row, column=3, value=credit)
+                ws.cell(row=row, column=4, value=cheque)
+                ws.cell(row=row, column=5, value=card)
+                ws.cell(row=row, column=6, value=cash)
+                ws.cell(row=row, column=7, value=total_sales)
+                ws.cell(row=row, column=8, value=remark_text)
+                ws.cell(row=row, column=9, value=deposited_date)
+                ws.cell(row=row, column=10, value=deposited_amount)
+                ws.cell(row=row, column=11, value=variance)
+
+                # Styling
+                self._style_data(ws.cell(row=row, column=1), horizontal='left')
+                for c in range(2, 8):
+                    self._style_data(ws.cell(row=row, column=c), horizontal='right', number_format=num_fmt)
+                self._style_data(ws.cell(row=row, column=8), horizontal='left')
+                self._style_data(ws.cell(row=row, column=9), horizontal='center', number_format='DD-MM-YYYY')
+                self._style_data(ws.cell(row=row, column=10), horizontal='right', number_format=num_fmt)
+                self._style_data(ws.cell(row=row, column=11), horizontal='right', number_format=num_fmt)
+
+                total_credit      += credit
+                total_cheque      += cheque
+                total_card        += card
+                total_cash        += cash
+                total_sales_all   += total_sales
+                total_deposited   += deposited_amount
+                total_variance    += variance
+                row += 1
 
         # Totals Row
         ws.cell(row=row, column=1, value='Total')

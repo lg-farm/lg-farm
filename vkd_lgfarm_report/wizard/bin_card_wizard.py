@@ -148,21 +148,21 @@ class BinCardWizard(models.TransientModel):
             loc_ids.add(m['location_dest_id'][0])
         loc_data = {l.id: l.usage for l in self.env['stock.location'].browse(list(loc_ids))}
 
-        # Pre-calculate data to decide which columns to show
+        # Pre-calculate data per product.
+        # A product row is included only if it has at least one movement
+        # (receipt, issue, or adjustment) within the selected date range.
+        # Receipts, Issues, Adjustments columns are ALWAYS shown.
         all_rows = []
-        has_receipts = False
-        has_issues = False
-        has_adjs = False
 
         for product in products:
             p_moves = moves_by_product.get(product.id, [])
             open_qty, qty_receipt, qty_issue, qty_adj = 0.0, 0.0, 0.0, 0.0
-            
+
             for m in p_moves:
                 m_date = str(m['date'])
                 is_in  = m['location_dest_id'][0] in target_loc_ids
                 is_out = m['location_id'][0]      in target_loc_ids
-                
+
                 if m_date < start_dt:
                     if is_in:  open_qty += m['product_qty']
                     if is_out: open_qty -= m['product_qty']
@@ -180,12 +180,15 @@ class BinCardWizard(models.TransientModel):
                         else: qty_issue += m['product_qty']
 
             closing_qty = open_qty + qty_receipt - qty_issue + qty_adj
+
+            # Skip rows with no activity at all
             if open_qty == 0 and qty_receipt == 0 and qty_issue == 0 and qty_adj == 0 and closing_qty == 0:
                 continue
 
-            if qty_receipt != 0: has_receipts = True
-            if qty_issue != 0:   has_issues = True
-            if qty_adj != 0:     has_adjs = True
+            # Skip rows with no period movement (zero Receipts, Issues AND Adjustments)
+            # — only opening/closing balance present means no actual transactions to show
+            if qty_receipt == 0 and qty_issue == 0 and qty_adj == 0:
+                continue
 
             all_rows.append({
                 'product': product,
@@ -197,15 +200,14 @@ class BinCardWizard(models.TransientModel):
                 'price': product.standard_price,
             })
 
-        # ── Column definitions based on analysis ──────────────────────────────
-        # Static first 3 columns
+        # ── Column definitions — always show all movement columns ──────────────
         col_groups = [
-            ('Open Balance', 'open'),
+            ('Open Balance',    'open'),
+            ('Receipts',        'receipt'),
+            ('Issues',          'issue'),
+            ('Adjustments',     'adj'),
+            ('Closing Balance', 'close'),
         ]
-        if has_receipts: col_groups.append(('Receipts', 'receipt'))
-        if has_issues:   col_groups.append(('Issues', 'issue'))
-        if has_adjs:     col_groups.append(('Adjustments', 'adj'))
-        col_groups.append(('Closing Balance', 'close'))
 
         total_cols = 3 + (len(col_groups) * 3)
         last_col_letter = get_column_letter(total_cols)

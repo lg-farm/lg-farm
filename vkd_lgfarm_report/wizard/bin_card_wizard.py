@@ -105,7 +105,14 @@ class BinCardWizard(models.TransientModel):
         num_fmt     = '#,##0.00'
 
         # ── Data Collection & Analysis ────────────────────────────────────────
-        company_ids = self.env.companies.ids
+        report_companies = self.env.companies
+        if self.location_id and self.location_id.company_id:
+            report_companies = self.location_id.company_id
+        elif self.warehouse_id and self.warehouse_id.company_id:
+            report_companies = self.warehouse_id.company_id
+            
+        company_ids = report_companies.ids
+        
         if self.location_id:
             target_loc_ids = [self.location_id.id]
         elif self.warehouse_id:
@@ -229,7 +236,7 @@ class BinCardWizard(models.TransientModel):
         # Row 2 (Meta) stays mostly same
         ws['A2'].value = 'Company:'; ws['A2'].font = Font(name='Arial', size=9, bold=True)
         ws.merge_cells('B2:C2')
-        ws['B2'].value = ", ".join(self.env.companies.mapped('name'))
+        ws['B2'].value = ", ".join(report_companies.mapped('name'))
         self._style_data(ws['B2'], horizontal='left')
         ws['D2'].value = 'Date From:'; ws['D2'].font = Font(name='Arial', size=9, bold=True)
         ws['E2'].value = self.date_from; self._style_data(ws['E2'], number_format='DD/MM/YYYY')

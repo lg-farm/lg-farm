@@ -93,7 +93,8 @@ class BinCardItemWiseWizard(models.TransientModel):
         ws['A2'].value = 'Company:'
         ws['A2'].font  = Font(name='Arial', size=9, bold=True)
         ws.merge_cells('B2:C2')
-        ws['B2'].value = ", ".join(self.env.companies.mapped('name'))
+        display_company = ", ".join(report_companies.mapped('name'))
+        ws['B2'].value = display_company
         self._style_data(ws['B2'], horizontal='left')
 
         ws['D2'].value = 'Date From:'
@@ -114,7 +115,13 @@ class BinCardItemWiseWizard(models.TransientModel):
             self._style_header(cell, '1F3864')
 
         # Fetch Data
-        company_ids = self.env.companies.ids
+        report_companies = self.env.companies
+        if self.location_id and self.location_id.company_id:
+            report_companies = self.location_id.company_id
+        elif self.warehouse_id and self.warehouse_id.company_id:
+            report_companies = self.warehouse_id.company_id
+
+        company_ids = report_companies.ids
         if self.location_id:
             target_loc_ids = [self.location_id.id]
         elif self.warehouse_id:

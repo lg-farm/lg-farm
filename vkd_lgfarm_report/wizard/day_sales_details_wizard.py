@@ -73,6 +73,13 @@ class DaySalesDetailsWizard(models.TransientModel):
         title_cell.alignment = center
 
         # Meta info
+        report_companies = self.company_ids or self.env.companies
+        
+        ws['A3'] = 'COMPANY:'; ws['A3'].font = Font(name='Arial', size=9, bold=True)
+        ws.merge_cells('B3:E3')
+        ws['B3'] = ", ".join(report_companies.mapped('name'))
+        self._style_data(ws['B3'], horizontal='left')
+
         ws['A4'] = 'DAY SALES DETAILS'
         ws['A4'].font = Font(bold=True)
         ws['A5'] = 'DATE FROM:'
@@ -83,8 +90,8 @@ class DaySalesDetailsWizard(models.TransientModel):
         self._style_data(ws['E5'], horizontal='left', number_format='DD-MM-YYYY')
 
         # Table Headers
-        company_ids = self.company_ids.ids or self.env.companies.ids
-        currency_name = (self.company_ids[0].currency_id.name if self.company_ids else self.env.company.currency_id.name) or 'Rs.'
+        company_ids = report_companies.ids
+        currency_name = (report_companies[0].currency_id.name if report_companies else self.env.company.currency_id.name) or 'Rs.'
         
         headers_row = 7
         ws.merge_cells('A7:A8')
@@ -178,11 +185,11 @@ class DaySalesDetailsWizard(models.TransientModel):
                     amount = payment.amount
                     if 'cash' in method_name:
                         cash += amount
-                    elif 'card' in method_name or 'visa' in method_name or 'master' in method_name:
+                    elif any(x in method_name for x in ['card', 'visa', 'master', 'amex']):
                         card += amount
-                    elif 'cheque' in method_name or 'check' in method_name:
+                    elif any(x in method_name for x in ['cheque', 'check']):
                         cheque += amount
-                    elif 'credit' in method_name:
+                    elif any(x in method_name for x in ['credit', 'customer', 'account']):
                         credit += amount
                     else:
                         card += amount

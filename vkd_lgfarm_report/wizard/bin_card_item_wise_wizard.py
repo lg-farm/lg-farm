@@ -93,7 +93,7 @@ class BinCardItemWiseWizard(models.TransientModel):
         ws['A2'].value = 'Company:'
         ws['A2'].font  = Font(name='Arial', size=9, bold=True)
         ws.merge_cells('B2:C2')
-        ws['B2'].value = self.env.company.name
+        ws['B2'].value = ", ".join(self.env.companies.mapped('name'))
         self._style_data(ws['B2'], horizontal='left')
 
         ws['D2'].value = 'Date From:'
@@ -114,16 +114,19 @@ class BinCardItemWiseWizard(models.TransientModel):
             self._style_header(cell, '1F3864')
 
         # Fetch Data
+        company_ids = self.env.companies.ids
         if self.location_id:
             target_loc_ids = [self.location_id.id]
         elif self.warehouse_id:
             target_loc_ids = self.env['stock.location'].search([
                 ('id', 'child_of', self.warehouse_id.view_location_id.id),
-                ('usage', '=', 'internal')
+                ('usage', '=', 'internal'),
+                ('company_id', 'in', company_ids)
             ]).ids
         else:
             target_loc_ids = self.env['stock.location'].search([
-                ('usage', '=', 'internal')
+                ('usage', '=', 'internal'),
+                ('company_id', 'in', company_ids)
             ]).ids
 
         start_dt = str(self.date_from) + ' 00:00:00'
@@ -137,42 +140,33 @@ class BinCardItemWiseWizard(models.TransientModel):
             ('location_id', 'in', target_loc_ids),
             ('location_dest_id', 'in', target_loc_ids),
         ]
-        if self.product_ids:
-            move_domain.append(('product_id', 'in', self.product_ids.ids))
-        
-        # Fetch moves in bulk
-        move_fields = ['product_id', 'product_qty', 'date', 'location_id', 'location_dest_id', 'reference', 'origin', 'picking_type_id']
-        all_moves = self.env['stock.move'].search_read(move_domain, move_fields)
-
-        # Group moves by product
-        moves_by_product = {}
-        for m in all_moves:
-            p_id = m['product_id'][0]
-            if p_id not in moves_by_product:
-                moves_by_product[p_id] = []
-            moves_by_product[p_id].append(m)
-
-        # Determine which products to report on
-        products = self.env['product.product'].search(
-            [('id', 'in', self.product_ids.ids)] if self.product_ids else [('type', '=', 'product')],
-            order='default_code, name'
-        )
-
-        # Build move domain
+        # 1. Build Move Domain (Location & Date are always filtered)
         move_domain = [
             ('state', '=', 'done'),
             ('date', '<=', end_dt),
-            ('product_id', 'in', products.ids),
             '|',
             ('location_id', 'in', target_loc_ids),
             ('location_dest_id', 'in', target_loc_ids),
         ]
+        if self.product_ids:
+            move_domain.append(('product_id', 'in', self.product_ids.ids))
         
-        # Fetch moves in bulk
+        # 2. Fetch all moves in bulk
         move_fields = ['product_id', 'product_qty', 'date', 'location_id', 'location_dest_id', 'reference', 'origin', 'picking_type_id']
         all_moves = self.env['stock.move'].search_read(move_domain, move_fields)
 
-        # Group moves by product
+        # 3. Determine products to process
+        if self.product_ids:
+            products = self.product_ids.sorted(key=lambda p: (p.default_code or '', p.name or ''))
+        else:
+            # If no products selected, process all products that have moves in these locations
+            # This covers both Opening Balance (moves before start_dt) and Period Transactions.
+            move_product_ids = list({m['product_id'][0] for m in all_moves})
+            products = self.env['product.product'].browse(move_product_ids).sorted(
+                key=lambda p: (p.default_code or '', p.name or '')
+            )
+
+        # 4. Group moves by product
         moves_by_product = {}
         for m in all_moves:
             p_id = m['product_id'][0]
@@ -197,8 +191,38 @@ class BinCardItemWiseWizard(models.TransientModel):
                 else:
                     period_moves.append(m)
 
-            if not period_moves:
+            # Skip products with no moves and no balance
+            if not period_moves and running_bal == 0:
                 continue
+
+            # 1. Row for Opening Balance (Optional but helpful if we want to show non-zero opening balances)
+            # Actually, the user asked to "load all product", but typically in item-wise 
+            # we only show transactions. I will add an opening balance row if it's non-zero 
+            # OR if there are period moves.
+            
+            # Show Opening Balance Row if non-zero
+            if running_bal != 0 or period_moves:
+                row_values = [
+                    self.date_from,
+                    product.default_code or '',
+                    product.name,
+                    'Opening Balance',
+                    '',
+                    '',
+                    running_bal,
+                ]
+                ws.row_dimensions[data_row].height = 18
+                for col_idx, val in enumerate(row_values, start=1):
+                    cell = ws.cell(row=data_row, column=col_idx, value=val)
+                    if col_idx == 1:
+                        self._style_data(cell, number_format=date_fmt)
+                    elif col_idx in (2, 3, 5):
+                        self._style_data(cell, horizontal='left')
+                    elif col_idx in (6, 7):
+                        self._style_data(cell, horizontal='right', number_format=num_fmt)
+                    else:
+                        self._style_data(cell, bold=True)
+                data_row += 1
 
             # 2. Rows for Period Moves
             for move in period_moves:

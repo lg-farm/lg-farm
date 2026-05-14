@@ -10,7 +10,7 @@
                     <group>
                         <field name="date_from" />
                         <field name="date_to" />
-                        <field name="company_id" groups="base.group_multi_company" />
+                        <field name="company_ids" widget="many2many_tags" groups="base.group_multi_company" />
                     </group>
                 </group>
                 <footer>

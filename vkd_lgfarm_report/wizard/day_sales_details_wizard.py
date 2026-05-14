@@ -11,7 +11,8 @@ class DaySalesDetailsWizard(models.TransientModel):
 
     date_from = fields.Date(string='Date From', required=True, default=fields.Date.context_today)
     date_to = fields.Date(string='Date To', required=True, default=fields.Date.context_today)
-    company_id = fields.Many2one('res.company', string='Company', default=lambda self: self.env.company)
+    company_ids = fields.Many2many('res.company', string='Companies', 
+                                   domain=lambda self: [('id', 'in', self.env.companies.ids)])
 
     def _thin_border(self):
         s = Side(style='thin')
@@ -82,7 +83,8 @@ class DaySalesDetailsWizard(models.TransientModel):
         self._style_data(ws['E5'], horizontal='left', number_format='DD-MM-YYYY')
 
         # Table Headers
-        currency_name = self.company_id.currency_id.name or 'Rs.'
+        company_ids = self.company_ids.ids or self.env.companies.ids
+        currency_name = (self.company_ids[0].currency_id.name if self.company_ids else self.env.company.currency_id.name) or 'Rs.'
         
         headers_row = 7
         ws.merge_cells('A7:A8')
@@ -126,7 +128,7 @@ class DaySalesDetailsWizard(models.TransientModel):
         date_from_dt = datetime(self.date_from.year, self.date_from.month, self.date_from.day, 0, 0, 0)
         date_to_dt   = datetime(self.date_to.year,   self.date_to.month,   self.date_to.day,   23, 59, 59)
 
-        pos_configs = self.env['pos.config'].search([('company_id', '=', self.company_id.id)])
+        pos_configs = self.env['pos.config'].search([('company_id', 'in', company_ids)])
 
         row = 9
         total_credit = 0.0
